@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -42,6 +43,34 @@ func (cfg *apiConfig) handleReset(w http.ResponseWriter, r *http.Request){
 	w.Write([]byte(msg))
 }
 
+func respondWithError(w http.ResponseWriter, code int, msg string){
+	type returnError struct{
+		Error string `json:"error"`
+	}
+	r := returnError{
+		Error: msg,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+
+	if err := json.NewEncoder(w).Encode(r); err!=nil{
+		log.Printf("Error marshalling JSON %v", err)
+		w.Write([]byte(`{"error":"internal server error"}`))
+	}
+}
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}){
+	data, err := json.Marshal(payload)
+	if err!=nil{
+		log.Printf("Error marshalling JSON %v", err)
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	w.Write(data)
+}
+
 func (cfg *apiConfig) handleValidate(w http.ResponseWriter, r *http.Request){
 	type parameters struct{
 		Body string `json:"body"`
@@ -56,34 +85,42 @@ func (cfg *apiConfig) handleValidate(w http.ResponseWriter, r *http.Request){
 	}
 
 	type returnValid struct{
-		Valid bool `json:"valid"`
+		Valid 		bool 	`json:"valid"`
+		CleanedBody string 	`json:"cleaned_body"`
 	}
-	type returnError struct{
-		Error string `json:"error"`
+	data := returnValid{
+		Valid:  true,
+		CleanedBody: cleanMsg(params.Body),
 	}
-	if len([]rune(params.Body))>140{
-		respBody := returnError{}
-		respBody.Error = "Chirp is too long"
-		if data, err := json.Marshal(respBody); err!=nil{
-			log.Printf("Error marshalling JSON: %s", err)
-		}else{
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(400)
-			w.Write(data)
-		}
 
+	if len([]rune(params.Body))>140{
+		respondWithError(w, 400, "Chirp is too long")
 	}else{
-		respBody := returnValid{}
-		respBody.Valid = true 
-		if data, err := json.Marshal(respBody); err!=nil{
-			log.Printf("Error marshalling JSON: %s", err)
-		}else{
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(200)
-			w.Write(data)
-		}
+		respondWithJSON(w, 200, data)
 	}
 }
+
+func cleanMsg(msg string) string{
+	words := strings.Split(msg, " ")
+	cleanWords := []string{}
+	for _, word := range words{
+		cleanWords = append(cleanWords, lowCaseCheckPr(word))
+	}
+	return strings.Join(cleanWords, " ")
+}
+func lowCaseCheckPr(word string) string{
+	profanities := make(map[string]struct{})
+	profanities["kerfuffle"] = struct{}{}
+	profanities["sharbert"] = struct{}{}
+	profanities["fornax"] = struct{}{}
+
+	_, ok := profanities[strings.ToLower(word)]
+	if ok{
+		return "****"
+	}
+	return word
+}
+
 func main() {
 	apiCfg := &apiConfig{}
 	apiCfg.fileserverHits.Store(0)
