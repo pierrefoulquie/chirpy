@@ -1,16 +1,23 @@
 package main
 
 import (
+	"chirpy/internal/database"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct{
 	fileserverHits atomic.Int32
+	db *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -122,8 +129,15 @@ func lowCaseCheckPr(word string) string{
 }
 
 func main() {
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err!=nil{
+		log.Fatal(err)
+	}
 	apiCfg := &apiConfig{}
 	apiCfg.fileserverHits.Store(0)
+	apiCfg.db = database.New(db)
 	mux := http.NewServeMux()	
 	fs := http.FileServer(http.Dir("."))
 	fsHandler := http.StripPrefix("/app", fs)
