@@ -2,6 +2,8 @@ package auth
 
 import (
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -57,4 +59,20 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error){
 		return uuid.UUID{}, err
 	}
 	return id, nil
+}
+
+func GetBearerToken(headers http.Header) (string, error) {
+    authHeader := headers.Get("Authorization")
+    if authHeader == "" {
+        return "", fmt.Errorf("missing Authorization header")
+    }
+    const prefix = "Bearer "
+    if !strings.HasPrefix(authHeader, prefix) {
+        return "", fmt.Errorf("invalid auth header")
+    }
+    token := strings.TrimSpace(authHeader[len(prefix):])
+    if token == "" {
+        return "", fmt.Errorf("empty bearer token")
+    }
+    return token, nil
 }

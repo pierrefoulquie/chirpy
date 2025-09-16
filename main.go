@@ -20,6 +20,7 @@ type apiConfig struct{
 	fileserverHits atomic.Int32
 	db *database.Queries
 	platform string
+	secret string
 }
 
 type Chirp struct{
@@ -35,6 +36,7 @@ type User struct {
 	CreatedAt time.Time	`json:"created_at"`
 	UpdatedAt time.Time	`json:"updated_at"`
 	Email     string	`json:"email"`
+	Token     string	`json:"token"`
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -135,7 +137,6 @@ func (cfg *apiConfig) handleChirps(w http.ResponseWriter, r *http.Request){
 	decoder := json.NewDecoder(r.Body)
 	type parameters struct{
 		Body string `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
 	}
 	params := parameters{}
 	err := decoder.Decode(&params)
@@ -148,20 +149,32 @@ func (cfg *apiConfig) handleChirps(w http.ResponseWriter, r *http.Request){
 	if len([]rune(params.Body))>140{
 		respondWithError(w, 400, "Chirp is too long")
 	}else{
-		if data, err :=cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
-			Body: params.Body,
-			UserID: params.UserID,
-		}); err!=nil{
+		tokenStr, err := auth.GetBearerToken(r.Header)
+		if err!=nil{
 			log.Fatal(err)
 		}else{
-			chirp := Chirp{
-				ID: data.ID,
-				CreatedAt: data.CreatedAt,
-				UpdatedAt: data.UpdatedAt,
-				Body: data.Body,
-				UserID: data.UserID,
+			userID, err := auth.ValidateJWT(tokenStr, cfg.secret)
+			if err!=nil{
+				log.Fatal(err)
+			}else{
+
+
+				if data, err :=cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
+					Body: params.Body,
+					UserID: userID,
+				}); err!=nil{
+					log.Fatal(err)
+				}else{
+					chirp := Chirp{
+						ID: data.ID,
+						CreatedAt: data.CreatedAt,
+						UpdatedAt: data.UpdatedAt,
+						Body: data.Body,
+						UserID: data.UserID,
+					}
+					respondWithJSON(w, 201, chirp)
+				}
 			}
-			respondWithJSON(w, 201, chirp)
 		}
 	}
 }
@@ -206,6 +219,7 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request){
 	type parameters struct{
 		Password string `json:"password"`
 		Email string `json:"email"`
+		ExpiresInSeconds int `json:"expires_in_seconds"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
@@ -215,11 +229,18 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request){
 		w.WriteHeader(500)
 		return
 	}
+	if params.ExpiresInSeconds == 0 || params.ExpiresInSeconds > 3600{
+		params.ExpiresInSeconds = 3600
+	}
 	if user, err := cfg.db.GetUser(r.Context(), params.Email);err!=nil{
 		log.Printf("Error retrieving email: %s", err)
 		w.WriteHeader(500)
 		return
 	}else{
+		token, err := auth.MakeJWT(user.ID, cfg.secret, time.Duration(params.ExpiresInSeconds)*time.Second)
+		if err!=nil{
+			respondWithError(w, 401, err.Error())
+		}
 		if err = auth.CheckPasswordHash(params.Password, user.HashedPassword);err!=nil{
 			respondWithError(w, 401, err.Error())
 		}else{
@@ -228,6 +249,7 @@ func (cfg *apiConfig) handleLogin(w http.ResponseWriter, r *http.Request){
 				CreatedAt: user.CreatedAt,
 				UpdatedAt: user.UpdatedAt,
 				Email: user.Email,
+				Token: token,
 			}
 			respondWithJSON(w, 200, data)
 		}
@@ -305,6 +327,8 @@ func main() {
 	apiCfg.fileserverHits.Store(0)
 	apiCfg.db = database.New(db)
 	apiCfg.platform = os.Getenv("PLATFORM")
+	apiCfg.secret = os.Getenv("SECRET")
+
 	mux := http.NewServeMux()	
 	fs := http.FileServer(http.Dir("."))
 	fsHandler := http.StripPrefix("/app", fs)
