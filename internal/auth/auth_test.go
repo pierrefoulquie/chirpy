@@ -28,7 +28,7 @@ func TestMakeJWT(t *testing.T) {
 	id := uuid.New()
 	secret := "test-secret"
 	duration := 10*time.Second
-	token, err := MakeJWT(id, secret, duration)
+	token, err := MakeJWT(id, secret)
 	if err!=nil{
 		t.Fatalf("MakeJWT call failed %v", err)
 	}
@@ -55,7 +55,7 @@ func TestMakeJWT(t *testing.T) {
 	if err!=nil{
 		t.Fatalf("GetIssuedAt failed %v", err)
 	}
-	now := time.Now().UTC()
+	now := time.Now()
 	if !within(2*time.Second, now, resIssuedAt.Time){
 		t.Errorf("got %v wanted %v", now, resIssuedAt.Time) 
 	}
@@ -75,8 +75,8 @@ func TestMakeJWT(t *testing.T) {
 func TestValidateJWT(t *testing.T) {
 	id := uuid.New()
 	secret := "test-secret"
-	duration := 10*time.Second
-	token, err := MakeJWT(id, secret, duration)
+	// duration := 10*time.Second
+	token, err := MakeJWT(id, secret)
 	if err!=nil{
 		t.Fatalf("MakeJWT call failed %v", err)
 	}
@@ -89,8 +89,8 @@ func TestValidateJWT(t *testing.T) {
 func TestExpiredToken(t *testing.T) {
 	id := uuid.New()
 	secret := "test-secret"
-	duration := -1*time.Second
-	token, err := MakeJWT(id, secret, duration)
+	// duration := -1*time.Second
+	token, err := MakeJWT(id, secret)
 	if err!=nil{
 		t.Fatalf("MakeJWT call failed %v", err)
 	}
@@ -103,8 +103,8 @@ func TestExpiredToken(t *testing.T) {
 func TestWrongSecret(t *testing.T) {
 	id := uuid.New()
 	secret := "test-secret"
-	duration := 1*time.Minute
-	token, err := MakeJWT(id, secret, duration)
+	// duration := 1*time.Minute
+	token, err := MakeJWT(id, secret)
 	if err!=nil{
 		t.Fatalf("MakeJWT call failed %v", err)
 	}

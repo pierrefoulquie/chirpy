@@ -7,10 +7,27 @@ package database
 
 import (
 	"context"
+
+	"github.com/google/uuid"
 )
 
+const generateRefreshToken = `-- name: GenerateRefreshToken :exec
+INSERT INTO refresh_tokens(token, created_at, updated_at, user_id, expires_at, revoked_at)
+VALUES ($1, NOW(), NOW(), $2, (NOW() + INTERVAL '60 days'), NULL)
+`
+
+type GenerateRefreshTokenParams struct {
+	Token  string
+	UserID uuid.UUID
+}
+
+func (q *Queries) GenerateRefreshToken(ctx context.Context, arg GenerateRefreshTokenParams) error {
+	_, err := q.db.ExecContext(ctx, generateRefreshToken, arg.Token, arg.UserID)
+	return err
+}
+
 const getUser = `-- name: GetUser :one
-SELECT id, created_at, updated_at, email, hashed_password FROM users
+SELECT id, created_at, updated_at, email, hashed_password, is_chirpy_red FROM users
 WHERE email = $1
 `
 
@@ -23,6 +40,37 @@ func (q *Queries) GetUser(ctx context.Context, email string) (User, error) {
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
+	)
+	return i, err
+}
+
+const revokeRefreshToken = `-- name: RevokeRefreshToken :exec
+UPDATE refresh_tokens
+SET revoked_at = NOW(), updated_at = NOW()
+WHERE token = $1
+`
+
+func (q *Queries) RevokeRefreshToken(ctx context.Context, token string) error {
+	_, err := q.db.ExecContext(ctx, revokeRefreshToken, token)
+	return err
+}
+
+const validateRefreshToken = `-- name: ValidateRefreshToken :one
+SELECT token, created_at, updated_at, user_id, expires_at, revoked_at FROM refresh_tokens
+WHERE token = $1
+`
+
+func (q *Queries) ValidateRefreshToken(ctx context.Context, token string) (RefreshToken, error) {
+	row := q.db.QueryRowContext(ctx, validateRefreshToken, token)
+	var i RefreshToken
+	err := row.Scan(
+		&i.Token,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UserID,
+		&i.ExpiresAt,
+		&i.RevokedAt,
 	)
 	return i, err
 }

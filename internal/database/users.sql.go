@@ -15,7 +15,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users(id, created_at, updated_at, email, hashed_password)
 VALUES(gen_random_uuid(),NOW(),NOW(),$1, $2)
-RETURNING id, created_at, updated_at, email
+RETURNING id, created_at, updated_at, email, is_chirpy_red
 `
 
 type CreateUserParams struct {
@@ -24,10 +24,11 @@ type CreateUserParams struct {
 }
 
 type CreateUserRow struct {
-	ID        uuid.UUID
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Email     string
+	ID          uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Email       string
+	IsChirpyRed bool
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
@@ -38,6 +39,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
@@ -49,4 +51,51 @@ DELETE FROM users
 func (q *Queries) Reset(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, reset)
 	return err
+}
+
+const updateToRed = `-- name: UpdateToRed :exec
+UPDATE users
+SET is_chirpy_red = true
+WHERE id = $1
+`
+
+func (q *Queries) UpdateToRed(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, updateToRed, id)
+	return err
+}
+
+const updateUser = `-- name: UpdateUser :one
+UPDATE users
+SET email = $2,
+hashed_password = $3,
+updated_at = NOW()
+WHERE id = $1
+RETURNING id, created_at, updated_at, email, is_chirpy_red
+`
+
+type UpdateUserParams struct {
+	ID             uuid.UUID
+	Email          string
+	HashedPassword string
+}
+
+type UpdateUserRow struct {
+	ID          uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Email       string
+	IsChirpyRed bool
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error) {
+	row := q.db.QueryRowContext(ctx, updateUser, arg.ID, arg.Email, arg.HashedPassword)
+	var i UpdateUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.IsChirpyRed,
+	)
+	return i, err
 }

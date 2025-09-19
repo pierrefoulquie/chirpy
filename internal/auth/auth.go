@@ -1,10 +1,13 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -23,11 +26,11 @@ func CheckPasswordHash(hash, password string) error{
 	return bcrypt.CompareHashAndPassword([]byte(password), []byte(hash))
 }
 
-func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error){
+func MakeJWT(userID uuid.UUID, tokenSecret string) (string, error){
 	claim := jwt.RegisteredClaims{
 		Issuer: "chirpy",
 		IssuedAt: jwt.NewNumericDate(time.Now().UTC()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(expiresIn)),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
 		Subject: userID.String(),
 	}
 
@@ -66,13 +69,36 @@ func GetBearerToken(headers http.Header) (string, error) {
     if authHeader == "" {
         return "", fmt.Errorf("missing Authorization header")
     }
-    const prefix = "Bearer "
+    const prefix = "Bearer"
     if !strings.HasPrefix(authHeader, prefix) {
         return "", fmt.Errorf("invalid auth header")
     }
     token := strings.TrimSpace(authHeader[len(prefix):])
     if token == "" {
         return "", fmt.Errorf("empty bearer token")
+    }
+    return token, nil
+}
+
+func MakeRefreshToken() (string, error) {
+	tok := make([]byte, 32)
+	rand.Read(tok)
+	tokStr := hex.EncodeToString(tok)
+	return tokStr, nil
+}
+
+func GetAPIKey(headers http.Header) (string, error) {
+    authHeader := headers.Get("Authorization")
+    if authHeader == "" {
+        return "", fmt.Errorf("missing Authorization header")
+    }
+    const prefix = "ApiKey"
+    if !strings.HasPrefix(authHeader, prefix) {
+        return "", fmt.Errorf("invalid auth header")
+    }
+    token := strings.TrimSpace(authHeader[len(prefix):])
+    if token == "" {
+        return "", fmt.Errorf("empty api key")
     }
     return token, nil
 }
